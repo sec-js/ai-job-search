@@ -17,6 +17,13 @@ class VerificationError(Exception):
     """Raised when a generated PDF does not satisfy its checks."""
 
 
+CID_MARKER = re.compile(r"\(cid:\d+\)", re.IGNORECASE)
+# LaTeX `--` in \cventry dates renders as U+2013; many ATS parsers only split on ASCII '-'.
+EN_DASH_DATE_RANGE = re.compile(
+    r"\b(\d{4}|\w{3}\.?\s+\d{4})\s*\u2013\s*(\d{4}|Present|present|Now|now)\b"
+)
+
+
 def run_tool(command):
     try:
         return subprocess.run(
@@ -49,6 +56,34 @@ def parse_page_count(pdfinfo_output):
 
 def normalize_text(text):
     return " ".join(text.split())
+
+
+def find_ats_issues(text, check_garbled=True, check_dates=False):
+    """Return ATS parseability problems found in an extracted text layer."""
+    issues = []
+    if check_garbled:
+        cid_matches = CID_MARKER.findall(text)
+        if cid_matches:
+            sample = ", ".join(dict.fromkeys(cid_matches[:5]))
+            suffix = "..." if len(cid_matches) > 5 else ""
+            issues.append(
+                f"text layer contains {len(cid_matches)} (cid:*) marker(s): {sample}{suffix}"
+            )
+        if "\ufffd" in text:
+            issues.append("text layer contains Unicode replacement characters (U+FFFD)")
+    if check_dates:
+        if EN_DASH_DATE_RANGE.search(text):
+            issues.append(
+                "text layer uses en-dash (U+2013) in date ranges; ATS parsers often "
+                "require ASCII hyphens (e.g. 2016-2024, not 2016–2024)"
+            )
+    return issues
+
+
+def check_ats_parseability(text, check_garbled=True, check_dates=False):
+    issues = find_ats_issues(text, check_garbled=check_garbled, check_dates=check_dates)
+    if issues:
+        raise VerificationError("; ".join(issues))
 
 
 def _extract_pypdf(pdf_path):
@@ -87,7 +122,15 @@ def extract_text_layer(pdf_path):
     return text, pages, "pdftotext"
 
 
-def verify_pdf(pdf_path, expected_pages=None, min_chars=1, required_text=(), dump_text=None):
+def verify_pdf(
+    pdf_path,
+    expected_pages=None,
+    min_chars=1,
+    required_text=(),
+    dump_text=None,
+    check_ats=False,
+    check_dates=False,
+):
     pdf_path = Path(pdf_path)
     if not pdf_path.is_file():
         raise VerificationError(f"PDF does not exist: {pdf_path}")
@@ -125,6 +168,17 @@ def verify_pdf(pdf_path, expected_pages=None, min_chars=1, required_text=(), dum
             raise VerificationError(
                 f"text layer is missing required text: {required!r} (extractor: {extractor})"
             )
+
+    if check_ats or check_dates:
+        try:
+            check_ats_parseability(
+                extracted_text,
+                check_garbled=check_ats,
+                check_dates=check_dates,
+            )
+        except VerificationError as exc:
+            raise VerificationError(f"{exc} (extractor: {extractor})") from exc
+
     return extractor, extracted_text, actual_pages
 
 
@@ -151,6 +205,16 @@ def build_parser():
         type=Path,
         help="write the extracted text layer to this path (UTF-8)",
     )
+    parser.add_argument(
+        "--check-ats",
+        action="store_true",
+        help="fail on (cid:*) markers or Unicode replacement characters in the text layer",
+    )
+    parser.add_argument(
+        "--check-dates",
+        action="store_true",
+        help="fail when date ranges use an en-dash (U+2013) instead of an ASCII hyphen",
+    )
     return parser
 
 
@@ -163,6 +227,8 @@ def main(argv=None):
             args.min_chars,
             args.contains,
             dump_text=args.dump_text,
+            check_ats=args.check_ats,
+            check_dates=args.check_dates,
         )
     except VerificationError as exc:
         print(f"Error: {args.pdf}: {exc}", file=sys.stderr)

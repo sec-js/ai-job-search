@@ -15,6 +15,7 @@ per-file diff commands.
 
 ### Added
 
+- **`verify_pdf.py` ATS parseability flags** - `--check-ats` fails on `(cid:*)` markers and Unicode replacement characters in the extracted text layer; `--check-dates` fails when date ranges use an en-dash (U+2013) instead of an ASCII hyphen — the silent Workday import failure mode documented in `05-cv-templates.md`. `/apply` Step 5d, `CLAUDE.md`, CI, and `05-cv-templates.md` now pass both flags on CV extraction. `framework_version` 1.4.3 → 1.4.4.
 - **pypdf ATS text-layer fallback** - `/apply` Step 5d and `tools/verify_pdf.py` extract the CV PDF text layer with **pypdf** first (BSD, `pip install pypdf`) so Windows machines without Poppler still get a mechanical parseability check. Poppler `pdftotext -layout -enc UTF-8` remains the fallback; if both are missing the check still degrades to a visual keyword review. No extra cache or installer. `05-cv-templates.md` `framework_version` 1.4.2 → 1.4.3.
 - **CI now tests the full documented Python range** (#370) - the Python tool tests job
   runs a 3.10-3.14 version matrix instead of pinning 3.12, so both the documented 3.10

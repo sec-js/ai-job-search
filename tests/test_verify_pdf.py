@@ -6,7 +6,9 @@ from unittest.mock import patch
 
 from tools.verify_pdf import (
     VerificationError,
+    check_ats_parseability,
     extract_text_layer,
+    find_ats_issues,
     parse_page_count,
     run_tool,
     verify_pdf,
@@ -93,6 +95,45 @@ class VerifyPdfTests(unittest.TestCase):
         self.assertEqual(text, "poppler text")
         self.assertEqual(pages, 2)
         self.assertEqual(mock_run_tool.call_args_list[0][0][0][:3], ["pdftotext", "-layout", "-enc"])
+
+    @patch("tools.verify_pdf._extract_pypdf", return_value=("Clean ATS text 2016-2024", 1))
+    def test_check_ats_passes_clean_text(self, _pypdf):
+        verify_pdf(self.pdf, check_ats=True, check_dates=True)
+
+    @patch("tools.verify_pdf._extract_pypdf", return_value=("Broken (cid:9) text", 1))
+    def test_check_ats_rejects_cid_markers(self, _pypdf):
+        with self.assertRaisesRegex(VerificationError, r"\(cid:\*\)"):
+            verify_pdf(self.pdf, check_ats=True)
+
+    @patch("tools.verify_pdf._extract_pypdf", return_value=("Role 2016\u20132024 Company", 1))
+    def test_check_dates_rejects_en_dash_ranges(self, _pypdf):
+        with self.assertRaisesRegex(VerificationError, "en-dash"):
+            verify_pdf(self.pdf, check_dates=True)
+
+
+class AtsParseabilityTests(unittest.TestCase):
+    def test_find_ats_issues_flags_cid_markers(self):
+        issues = find_ats_issues("Role title (cid:12) and more (cid:34)")
+        self.assertEqual(len(issues), 1)
+        self.assertIn("(cid:*)", issues[0])
+
+    def test_find_ats_issues_flags_replacement_characters(self):
+        issues = find_ats_issues("K\u00f8benhavn \ufffd Denmark")
+        self.assertEqual(len(issues), 1)
+        self.assertIn("replacement", issues[0])
+
+    def test_find_ats_issues_flags_en_dash_date_ranges(self):
+        issues = find_ats_issues("Engineer 2016\u20132024 Acme", check_garbled=False, check_dates=True)
+        self.assertEqual(len(issues), 1)
+        self.assertIn("en-dash", issues[0])
+
+    def test_find_ats_issues_accepts_ascii_hyphen_dates(self):
+        issues = find_ats_issues("Engineer 2016-2024 Acme", check_garbled=False, check_dates=True)
+        self.assertEqual(issues, [])
+
+    def test_check_ats_parseability_raises_on_issues(self):
+        with self.assertRaisesRegex(VerificationError, "replacement"):
+            check_ats_parseability("broken \ufffd text")
 
 
 class RunToolTests(unittest.TestCase):

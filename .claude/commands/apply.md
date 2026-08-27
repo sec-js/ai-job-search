@@ -263,7 +263,7 @@ An ATS parser reads the PDF's embedded **text layer**, not the rendered page —
 **1. Extract the text layer:**
 
 ```bash
-python tools/verify_pdf.py cv/main_<company>_<role>.pdf --dump-text cv/main_<company>_<role>.txt
+python tools/verify_pdf.py cv/main_<company>_<role>.pdf --dump-text cv/main_<company>_<role>.txt --check-ats --check-dates
 ```
 
 The command prints `extractor: pypdf` or `extractor: pdftotext`. Record that name in the Step 6 report. Read the `.txt` file. If that tool is unavailable, the Poppler fallback is:
@@ -273,6 +273,8 @@ cd cv && pdftotext -layout -enc UTF-8 main_<company>_<role>.pdf main_<company>_<
 ```
 
 **2. Parseability checks** on the extracted text:
+
+The command above already fails on the mechanical problems below when `--check-ats` and `--check-dates` are set. Re-read the `.txt` file for the checks that still need human judgment (reading order, visible-but-missing text):
 
 - [ ] **Text extracted at all**, with no garbage runs: no `(cid:NNN)` markers, no `�` replacement characters, no stretches of missing text that are visible in the PDF
 - [ ] **Email and phone survive as literal text.** Icon fonts extract as glyph names (the stock template's contact line extracts as `MOBILE-ALT [+XX ...] • Envelope [your.email@...]`) — that noise is harmless, but the actual address and digits must be present. A contact detail carried only by an icon or a hyperlink target (like the `LinkedIn` link text) is invisible to an ATS; the email must be printed as text.
