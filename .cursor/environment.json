@@ -1,0 +1,5 @@
+{
+  "name": "AI Job Search",
+  "user": "ubuntu",
+  "install": "bash .cursor/install.sh"
+}
